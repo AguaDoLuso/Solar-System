@@ -2,6 +2,9 @@
 import pygame as pg
 import math
 
+import cProfile # check the slowest time
+import pstats   # check the slowest time
+
 # Initialize pygame -------------------------------------------
 pg.init()
 WIDTH, HEIGHT = 900, 900
@@ -20,17 +23,24 @@ L_RED = (188, 39, 50)       # Custom Light Red
 
 D_GREY = (80, 78, 81)       # Custom Dark Grey
 
+# Constants --------------------------------------------------
+RENDER_EVERY = 3    # limits the draw to every 3 ticks (optimization)
+MAX_TRAIL_POINTS = 9  # limits the size of the stored orbit list (optimization)
+
 # Astro Class ------------------------------------------------
 class Astro:
     AU = 1.49597e8 * 1000     # Astronomical Unit in meters 
     G =  6.67428e-11    # Gravitational Constant
     SCALE = 250 / AU    # 1AU = 200 pixels  Notes: I want to ajust this at will
     TIMESTEP = 3600 * 24    # 1 day         Notes: I want to ajust this at will, also see the current date solar position
+    Astral_Bodies = []
     
-    
-    def __init__(self, x, y, radius, color, mass):
+    def __init__(self, name, x, y, radius, color, mass):
+        self.name = name
         self.x = x
         self.y = y
+        self.last_x = 0
+        self.last_y = 0
         self.radius = radius               # Notes: I want to predeterminate the radius in order of the mass (it can manually be inserted later)
         self.color = color                 # Notes: Could make it random if you dont insert
         self.mass = mass                   # Notes: I want to predeterminate the mass in order of the raidus (it can manually be inserted later)
@@ -54,12 +64,14 @@ class Astro:
                 y = y * self.SCALE + HEIGHT / 2
                 updated_points.append((x,y))
             pg.draw.lines(window, self.color, False, updated_points, 2)    # Draw Orbit
+        self.last_x = self.x
+        self.last_y = self.y
         pg.draw.circle(window, self.color, (x,y), self.radius)      # Draw Astro
         
-    def remove(self, win):  # Removes Astro
-        x = self.x * self.SCALE + WIDTH / 2
-        y = self.y * self.SCALE + HEIGHT / 2
-        pg.draw.circle(win, BLACK, (x,y), self.radius)
+    def remove(self, window):
+        x = self.last_x * self.SCALE + WIDTH / 2
+        y = self.last_y * self.SCALE + HEIGHT / 2
+        pg.draw.circle(window, BLACK, (x,y), self.radius)      # remove Astro
         
     def attraction(self, other):    # calculates the gravitational force of 2 bodies
         distance_x = other.x - self.x
@@ -88,57 +100,78 @@ class Astro:
         self.x += self.dx * self.TIMESTEP
         self.y += self.dy * self.TIMESTEP
         self.orbit.append((self.x, self.y))
+        if len(self.orbit) > MAX_TRAIL_POINTS:  # if there are already more the 9 stored positions pop the oldest  (optimization)
+            self.orbit.pop(0)
 
 def init_solar_system():
     AU = Astro.AU
 # Sun -------------------------------
     MASS_SUN = 1.98892e30   # Sun Mass in kg
-    sun = Astro(0, 0, 30, YELLOW, MASS_SUN)
+    sun = Astro("Sun", 0, 0, 30, YELLOW, MASS_SUN)
     sun.sun = True
 # Mercury --------------------------
     MASS_MERCURY = 3.3e23
-    mercury = Astro(0.387*AU, 0, 8, D_GREY, MASS_MERCURY)
+    mercury = Astro("Mercury", 0.387*AU, 0, 8, D_GREY, MASS_MERCURY)
     mercury.dy = 47.4 * 1000  # mercury velocity in meters
 # Venus ----------------------------
     MASS_VENUS = 4.8685e24
-    venus = Astro(0.723*AU, 0, 14, WHITE, MASS_VENUS)   # Notes: Want to change the color
+    venus = Astro("Venus", 0.723*AU, 0, 14, WHITE, MASS_VENUS)   # Notes: Want to change the color
     venus.dy = -35.02 * 1000    # venus velocity in meters
 # Earth ----------------------------
     MASS_EARTH = 5.9742e24  # Earth Mass in kg
-    earth = Astro(AU, 0, 16, L_BLUE, MASS_EARTH)
+    earth = Astro("Earth", AU, 0, 16, L_BLUE, MASS_EARTH)
     earth.dy = 29.783 * 1000    # earth velocity velocity in meters
 # Mars -----------------------------
     MASS_MARS = 6.39e23
-    mars = Astro(1.524*AU, 0, 12, L_RED, MASS_MARS)
+    mars = Astro("Mars", 1.524*AU, 0, 12, L_RED, MASS_MARS)
     mars.dy = 24.077 * 1000      # mars velocity in meters
 # Jupiter --------------------------
 # Saturn ---------------------------
 # Uranus ---------------------------
 # Neptune --------------------------
     
-    Astral_Bodies = [sun, mercury, venus, earth, mars]
-    return Astral_Bodies
+    Astro.Astral_Bodies = [sun, mercury, venus, earth, mars]
 
 # Main Loop --------------------------------------------------
 
 def main(): 
-    astral_bodies = init_solar_system()
-    
+    init_solar_system()
+    frame_count = 0
     run = True
     clock = pg.time.Clock()
     while run:
         clock.tick(60)  # makes the Simulation run cap on 60 fps
-        #WINDOW.fill(BLACK)
         for event in pg.event.get(): 
             if event.type == pg.QUIT:
                 run = False
-            
-        for body in astral_bodies:
-            body.remove(WINDOW)
-            body.update_position(astral_bodies)     
-            body.draw(WINDOW)       # Notes: verify if the Astros are out of the window, if they are dont draw, just keep up with the numbers
-            
+                
+        #for body in astral_bodies:            
+        #    if (frame_count % RENDER_EVERY) == 0:  
+        #        body.remove(WINDOW)
+        #    body.update_position(astral_bodies)  
+        #    
+        #if (frame_count % RENDER_EVERY) == 0:    
+        #    for body in astral_bodies:
+        #        #WINDOW.fill(BLACK)
+        #        body.draw(WINDOW)       # Notes: verify if the Astros are out of the window, if they are dont draw, just keep up with the numbers
+        #    
+        for body in Astro.Astral_Bodies:
+            body.update_position(Astro.Astral_Bodies)
+            if (frame_count % RENDER_EVERY) == 0: 
+                body.remove(WINDOW)
+                body.draw(WINDOW)
+                
         pg.display.update()
+        frame_count += 1
     pg.quit()
+           
             
-main()
+if __name__ == "__main__":
+    profiler = cProfile.Profile()
+    profiler.enable()
+
+    main()  # run your simulation
+
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats("tottime")
+    stats.print_stats(10)  # top 10 slowest functions
